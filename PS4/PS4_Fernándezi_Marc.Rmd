@@ -1,0 +1,187 @@
+---
+title: "PS4_Fernándezi_Marc"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Problem 3: Collatz sequence
+
+Take your function for the Collatz sequence from the previous exercise set and make a graphic with the results. There are many ways to represent a sequence, so any graph that show values and order will be appropriate. Showing which values are even or odd may add interest to the graphic.
+
+```{r fig.width=10, fig.height=7}
+rm(list = ls())
+
+library("ggplot2")
+library("dplyr")
+
+# this function will create the collatz sequence
+
+collatz <- function(n) {
+  s <- n
+  while (n>1) {  
+    if (n %% 2 == 0) {n <- n/2} else {n <- 3*n+1}
+    s <- c(s, n)
+  }
+  return(s)
+}
+
+# this function will create the plot
+
+collatz.graph <- function(n) { 
+  sequence <- collatz(n)
+  index <- 1:length(sequence)
+  even.odd <- c()
+  
+  for (i in sequence) {
+    if (i %% 2 == 0) {
+      even.odd <- c(even.odd, "lightsteelblue2")
+    } else {
+      even.odd <- c(even.odd, "lightsteelblue4")
+    }
+  }
+  
+  # creating the data frame to plot the data
+  
+  collatz.df <- data.frame("index" = index, sequence, even.odd)
+  
+  collatz.df %>%
+    ggplot(aes(x = index, y = sequence, color = even.odd)) +
+    ggtitle("\n Collatz sequence \n") + 
+    theme_bw() + # apply a theme that will set the background color to white, black border, and gray lines
+    theme(plot.title = element_text(hjust = 0.5, size = 14, color = "slategray", face = "bold")) + # formatting text
+    geom_line(color = even.odd, lwd = 0.8) + # coloring the lines depending on whether they're even or odd
+    geom_point(col = "lightslategrey", alpha = 0.3, size = 1.7) # defining size and transparency of the scatter points
+}
+
+# Example 1
+collatz.graph(145)
+
+# Example 2
+collatz.graph(134)
+
+```
+
+## Problem 1: Missing data in ACS
+
+Load the data from American Community Survey from the file acs2017.RData in Aula Global. Check if any variable has missing values. How should those missing values be understood? Are they just random missing answers in the survey? Are they related to other variables? Show graphical or numerical results that support your answers.
+
+We could estimate per capita income as the average of variable INCTOT (total income) for the whole population. Would `mean(acs2017$INCTOT, na.rm=TRUE)` yield a reasonable estimation? Can you give a better one?
+
+The meaning of most variables is obvious from their names and content, except for:
+
+* INCTOT: total income
+
+* INCWAGE: income from wages
+
+* EDUYEARS: years of education
+
+* Suggestion: You will need `is.na`. Functions `table`, `barplot`, `tapply`, `aggregate`, `for`, `print` and others may be useful. As usual, there is a lot of different ways to solve this problem.
+
+Suggestion: Most graphs and tables functions work with any order of variables, but variable order may have an strong impact on results readability.
+```{r fig.width=10, fig.height=10}
+
+load("./acs2017.RData")
+
+# inspecting the data
+
+na_count <-sapply(acs2017, function(y){
+  sum(length(which(is.na(y))))
+  }) # this shows the number of NA values per column
+na_count
+
+# The more troublesome variables are total income and income from wages
+
+# For a deeper analysis, we might want to see whether there are groups of people who are specially reluctant to share income from wages or total income, that could help us more precisely fill in missing values (for instance by simulating a normal distribution with a mean of people with similar demographics). However this would take a lot of time and is not the objective of this exercise
+
+View(sapply(acs2017, function(y){
+  table(y[is.na(acs2017$INCTOT)])/length(y) # We create a relative frequency view of each attribute to analyze the aforementioned effects
+}))
+
+# There's a considerable amount of missing values, so we will inspect three options and see which is better. 
+
+# OPTION 1: dropping NA values
+
+option1 <- acs2017
+option1 <- option1[-c(which(is.na(option1$INCTOT))),]
+option1 <- option1[-c(which(is.na(option1$INCWAGE))),]
+
+# OPTION 2: using the mean on every attribute to replace NA values with it
+
+option2 <- acs2017
+
+inctot.sample.mean <- mean(option2$INCTOT, na.rm = TRUE)
+option2$INCTOT[is.na(option2$INCTOT)] <-inctot.sample.mean
+
+incwage.sample.mean <- mean(option2$INCWAGE, na.rm = TRUE)
+option2$INCWAGE[is.na(option2$INCWAGE)] <- incwage.sample.mean
+
+# OPTION 3: simulating random draws of a normal distribution with the same mean and sd
+
+option3 <- acs2017
+
+set.seed(123)
+
+# Computing mean and sd beforehand to not do it on every loop
+
+inctot.mean <- mean(option3$INCTOT, na.rm = TRUE) 
+inctot.sd <- sd(option3$INCTOT, na.rm = TRUE)
+incwage.mean <- mean(option3$INCWAGE)
+incwage.sd <- sd(option3$INCWAGE)
+
+for (i in which(is.na(option3$INCTOT))){
+  option3$INCTOT[i] <- rnorm(1, inctot.mean, inctot.sd)
+}
+
+for (i in which(is.na(option3$INCWAGE))){
+  option3$INCWAGE[i] <- rnorm(1, inctot.mean, inctot.sd)
+}
+
+# Checking there are no NA values
+sum(is.na(option3$INCTOT))
+sum(is.na(option3$INCWAGE))
+
+# OPTION 4: using an exponential distribution instead (which better matches the sample distribution of the attributes)
+
+option4 <- acs2017
+
+inctot.rate <- 1 / mean(option4$INCTOT, na.rm = TRUE) 
+incwage.rate <- 1 / mean(option4$INCWAGE, na.rm = TRUE)
+
+for (i in which(is.na(option4$INCTOT))){
+  option4$INCTOT[i] <- rexp(1, inctot.rate)
+}
+
+for (i in which(is.na(option4$INCWAGE))){
+  option4$INCWAGE[i] <- rexp(1, incwage.rate)
+}
+
+
+# Comparing the results
+
+row_names <- c("mean", "standard deviation", "outstanding observations")
+option1.results <- c(mean(option1$INCTOT), sd(option1$INCTOT), length(option1$INCTOT))
+option2.results <- c(mean(option2$INCTOT), sd(option2$INCTOT), length(option2$INCTOT))
+option3.results <- c(mean(option3$INCTOT), sd(option3$INCTOT), length(option3$INCTOT))
+option4.results <- c(mean(option4$INCTOT), sd(option4$INCTOT), length(option4$INCTOT))
+
+inctot.comparison <- data.frame(row_names, option1.results, option2.results, option3.results, option4.results)
+colnames(inctot.comparison) <- c("","dropping NA", "using the mean of the attribute", "random normal distribution", "random exponential distribution")
+inctot.comparison
+
+option1.results <- c(mean(option1$INCWAGE), sd(option1$INCWAGE), length(option1$INCWAGE))
+option2.results <- c(mean(option2$INCWAGE), sd(option2$INCWAGE), length(option2$INCWAGE))
+option3.results <- c(mean(option3$INCWAGE), sd(option3$INCWAGE), length(option3$INCWAGE))
+option4.results <- c(mean(option4$INCWAGE), sd(option4$INCWAGE), length(option4$INCWAGE))
+
+incwage.comparison <- data.frame(row_names, option1.results, option2.results, option3.results, option4.results)
+colnames(incwage.comparison) <- c("","dropping NA", "using the mean of the attribute", "random normal distribution", "random exponential distribution")
+incwage.comparison
+
+par(mfrow = c(1, 2))
+boxplot(option1$INCTOT, option2$INCTOT, option3$INCTOT, option4$INCTOT, main = "boxplot of INCTOT")
+boxplot(option1$INCWAGE, option2$INCWAGE, option3$INCWAGE, option3$INCWAGE, main = "boxplot of INCWAGE")
+
+# As we see in the comparison dataframes, the summary variables for the exponential random sampling and simply dropping NA values are relatively similar. Using a random normal sampling is a fairly good option but not the best one, as it doesn't mimic the sample distribution of the attributes with NA values. Using the mean to fill in missing values reduces the sd. Because the sample has so many values, all three strategies are relatively similar, even if there are ~20% missing values and the differences only really appear to be similar when it comes to the variance, but even in that case they are not too relevant. The best option overall is probably simulating a random sampling of an exponential function, provided that the lambda value passed is adecuate.
+
+```
